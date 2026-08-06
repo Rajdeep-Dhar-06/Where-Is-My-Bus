@@ -4,7 +4,9 @@ import cors from 'cors';
 // Route modules
 import routeRoutes from './routes/route.routes';
 import stationRoutes from './routes/station.routes';
-// import tripRoutes from './routes/trip.routes';         // TODO: wire up after implementation
+import vehicleRoutes from './routes/vehicle.routes';
+import userRoutes from './routes/user.routes';
+
 import { errorHandler } from './middlewares/error.middleware';
 
 const app = express();
@@ -16,8 +18,8 @@ app.use(express.json());
 // --- API Routes ---
 app.use('/api/routes', routeRoutes);
 app.use('/api/stations', stationRoutes);
-// app.use('/api/trips', tripRoutes);
-
+app.use('/api/vehicles', vehicleRoutes);
+app.use('/api/users', userRoutes);
 
 // --- Health Check ---
 app.get('/health', (_req, res) => {

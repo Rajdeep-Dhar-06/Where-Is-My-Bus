@@ -1,7 +1,6 @@
 import { Station } from '../models/station.model';
 import { Route } from '../models/route.model';
 import { OsrmService } from './osrm.service';
-// import { LiveService } from './live.service'; // Will be integrated in Sprint 3
 
 export const RouteService = {
 
@@ -120,7 +119,7 @@ export const RouteService = {
             isActive: true,
             'stops.stationId': { $all: [startStationId, endStationId] }
         })
-            .select('routeName stops cumulativeDistances')
+            .select('routeName stops')
             .lean();
 
         // B. Directionality Check in Node.js Memory
@@ -131,22 +130,11 @@ export const RouteService = {
             return startStop && endStop && startStop.order < endStop.order;
         });
 
-        // C. Attach Live Telemetry Data (Cross-Service Integration)
-        const routesWithLiveBuses = await Promise.all(validRoutes.map(async (route) => {
-
-            // TODO: Sprint 3 Integration
-            // const activeBuses = await LiveService.getActiveBusesOnRoute(route._id.toString());
-            const activeBuses = [
-                { busId: 'bus_101', currentLocationIndex: 5, speed: 8.5 } // Mocked until Sprint 3
-            ];
-
-            return {
-                routeId: route._id,
-                routeName: route.routeName,
-                activeBuses
-            };
+        // C. Return pure route metadata (live bus data is fetched separately via GET /api/routes/:id/buses)
+        return validRoutes.map(route => ({
+            routeId: route._id,
+            routeName: route.routeName,
+            stops: route.stops
         }));
-
-        return routesWithLiveBuses;
     }
 };

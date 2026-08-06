@@ -7,6 +7,7 @@ import {
     updateRoute,
     toggleRoute
 } from '../controllers/route.controller';
+import { getActiveBusesOnRoute } from '../controllers/live.controller';
 
 const router = Router();
 
@@ -21,6 +22,10 @@ router.get('/', getAllRoutes);
 // GET /api/routes/search?from=<id>&to=<id>
 // Purpose: Find active routes connecting two stations (Passenger)
 router.get('/search', searchRoutes);
+
+// GET /api/routes/:id/buses
+// Purpose: List all currently active buses on a route (Passenger, reads from RAM)
+router.get('/:id/buses', getActiveBusesOnRoute);
 
 // GET /api/routes/:id
 // Purpose: Get full detailed data of a single route (Admin/Passenger)
