@@ -20,5 +20,6 @@ const stationSchema = new Schema<IStation>({
 
 // Text index for the Passenger autocomplete search bar
 stationSchema.index({ stationName: 'text' });
+stationSchema.index({ location: '2dsphere' });
 
 export const Station = mongoose.model<IStation>('Station', stationSchema);

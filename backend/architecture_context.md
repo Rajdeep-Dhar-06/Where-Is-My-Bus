@@ -2,92 +2,141 @@
 
 ## 1. System Objective
 
-A real-time, closed-system transit tracking application (WhereIsMyTrain style) consisting of a Node.js REST/WebSocket backend. It serves three distinct flows:
+A real-time, single-server transit tracking application (WhereIsMyTrain style) consisting of a Node.js REST/WebSocket backend. It serves three distinct flows:
 
-* **Admin Flow:** Creation of fixed stations and static physical routes using the OSRM routing engine.
-* **Driver Flow:** High-frequency (15s) GPS telemetry broadcast from mobile web browsers.
+* **Admin Flow:** Creation of fixed stations and static physical routes using the OSRM routing engine with linear pre-interpolation.
+* **Driver Flow:** High-frequency (3–15s) GPS telemetry broadcast from mobile web browsers.
 * **Passenger Flow:** Read-only access to text-based station search, live bus tracking, and $O(1)$ ETA calculations.
+
+---
 
 ## 2. Technical Stack
 
 * **Runtime:** Node.js with TypeScript.
 * **Web Framework:** Express.js.
 * **Cold Storage (Database):** MongoDB (Mongoose) for fixed graph data (Stations, Routes, Users, Vehicles).
-* **Hot Storage (Memory):** Redis (`ioredis`) for live state (Active Buses) and Pub/Sub for WebSockets.
-* **Real-time Protocol:** `ws` or `Socket.io`.
-* **External APIs:** OSRM (Open Source Routing Machine) for Polyline/Distance generation.
+* **Hot Storage (Process Memory):** Node.js In-Memory State (`Map` Singleton) for active bus telemetry and trip state.
+* **Real-Time Protocol:** `Socket.io` (utilizing native Socket.io Rooms for broadcasting).
+* **Geospatial & Routing Utilities:** Public OSRM API (Raw Polyline/Distance Generation) + `Turf.js` (Linear pre-interpolation during route creation).
+
+---
 
 ## 3. Core Architectural Rules & Constraints
 
-The agent must strictly adhere to these constraints to prevent architectural drift:
+1. **Coordinate Format:** All spatial data across the stack MUST use `[longitude, latitude]` to align with standard GeoJSON and MapLibre GL JS.
+2. **Pre-Interpolated Geometry (Zero Live Trigonometric Math):** Polyline paths returned by OSRM must be linearly pre-interpolated during route creation into dense, uniformly spaced segments (e.g., 10-meter chunks using Turf.js `lineChunk`). This converts live driver GPS snapping into an $O(1)$ nearest-index lookup and keeps CPU overhead minimal.
+3. **No Live Passenger Geospatial Queries:** The Node.js server must never execute spatial queries (like Haversine or `$near`) during live passenger read requests. Station searches strictly use a MongoDB `$text` index on `Station.stationName`.
+4. **In-Memory Hot State:** Driver pings update a global in-memory state store (`activeBuses` Map). Passenger $O(1)$ ETA calculations subtract the bus's `lastPassedIndex` distance from the passenger's station distance using the route's pre-calculated `cumulativeDistances` array.
+5. **Single-Server Scope:** Real-time events are broadcast directly via native Socket.io rooms (e.g., `route_<id>`). Redis Pub/Sub and external caching layers are deliberately omitted to maximize simplicity and eliminate network hop latency.
 
-1. **Coordinate Format:** All spatial data across the stack MUST use `[longitude, latitude]` to align with GeoJSON and MapLibre GL JS.
-2. **Zero Live Geometry Math (Passenger Queries):** The Node.js server must never execute spatial math (like Haversine formulas) during live passenger queries. Passenger queries are $O(1)$. However, the server *will* perform point-to-line snapping (e.g. using turf.js) when receiving high-frequency driver GPS pings to map them to the route's `geometryIndex` before caching in Redis.
-3. **No Passenger Geospatial Queries:** Do not use MongoDB `$near` or `$geoWithin` queries for passengers. The system uses a strict "Autocomplete Search" design relying on a `$text` index on `Station.stationName`.
-4. **Redis-First Live State:** Passenger queries for live ETAs must read the bus's current location index from Redis, subtract it from the passenger's station index in the MongoDB `cumulativeDistances` array, and return the result.
+---
 
-## 4. Database Schemas (MongoDB)
+## 4. Database Schemas & State Management
 
-### 4.1 User Schema
+### 4.1 MongoDB Collections (Cold Storage)
+
+#### User Schema
 
 * `clerkId` (String, unique)
 * `role` (Enum: `['ADMIN', 'DRIVER']`)
 * `licenseNumber` (String, required if DRIVER)
 
-### 4.2 Vehicle Schema
+#### Vehicle Schema
 
 * `vehicleId` (String, unique)
 * `capacity` (Number)
 * `licensePlate` (String, unique)
 
-### 4.3 Station Schema
+#### Station Schema
 
 * `stationName` (String, Text Indexed)
-* `location` (GeoJSON Point: `[lon, lat]`)
+* `location` (GeoJSON Point: `{ type: 'Point', coordinates: [lon, lat] }`)
+* `isActive` (Boolean, default: true)
 
-### 4.4 Route Schema (The Core Graph)
+#### Route Schema (The Core Graph)
 
 * `routeName` (String, unique)
+* `isActive` (Boolean, default: true)
 * `stops` (Array of Objects):
 * `stationId` (ObjectId, ref: Station)
 * `order` (Number)
-* `geometryIndex` (Number: Points to the exact index in the `geometry` array where this stop sits).
+* `geometryIndex` (Number: Array index pointing to the exact interpolated point where this stop resides).
 * `distanceToNext` (Number: Meters to next stop).
 
 
-* `geometry` (GeoJSON LineString: The full OSRM road path).
-* `cumulativeDistances` (Array of Numbers: Maps 1:1 with `geometry`. Index $i$ represents the total meters from the start of the route).
+* `geometry` (GeoJSON LineString: The dense, 10-meter interpolated road path).
+* `cumulativeDistances` (Array of Numbers: Maps 1:1 with `geometry`. Index $i$ represents total meters from the start of the route).
 * **Indexes:** Compound index on `stops.stationId`.
 
-### 4.5 Trip State (Redis Only)
+### 4.2 In-Memory Hot State (Node.js Process RAM)
 
-Trips do not exist in MongoDB. A Trip is an active state linking a `Vehicle` to a `Route`, stored entirely in Redis (e.g., `bus:<id>:state`).
+Active trip state resides entirely inside the Node.js process memory via a global thread-safe Map structure:
+
+```typescript
+interface ActiveBusState {
+    busId: string;
+    routeId: string;
+    driverId: string;
+    lastPassedIndex: number;
+    speedKmh: number;
+    lastPingTimestamp: number;
+}
+
+// Global In-Memory Store
+export const activeBuses = new Map<string, ActiveBusState>();
+```
+
+---
 
 ## 5. Development Roadmap (Sprints)
 
-* **Sprint 1: Infrastructure & Data Layer**
-* Initialize Express, TypeScript, Mongoose, and Redis connections.
-* Implement the exact Mongoose schemas for `User`, `Station`, `Vehicle`, and `Route`.
+### Sprint 1: Infrastructure & Data Layer
+
+* Initialize Express, TypeScript, Mongoose, and Socket.io server.
+* Implement Mongoose schemas for `User`, `Station`, `Vehicle`, and `Route`.
+* Configure central global error handling for Express v5.
+
+### Sprint 2: The Graph Builder & Pre-Interpolation (OSRM)
+
+* Build `POST /api/routes` and `PUT /api/routes/:id`.
+* Fetch raw OSRM geometry (`overview=full&annotations=distance`).
+* **Interpolation Pipeline:** Intercept raw OSRM output using Turf.js `lineChunk` to chop straightaways and curves into uniform 10-meter segments.
+* Rebuild `cumulativeDistances` and map `geometryIndex` for each bus stop before persisting to MongoDB.
+* Implement Zod validation middleware for all station and route endpoints.
+
+### Sprint 3: The Live Telemetry Engine (WebSockets & In-Memory State)
+
+* Initialize Socket.io connection handlers and room management.
+* Build `POST /api/trips/start` to register an active vehicle in the `activeBuses` memory Map.
+* Implement driver socket listener for GPS pings (`driver:telemetry`).
+* Snap GPS coordinates to the pre-interpolated `geometryIndex` and update the in-memory Map.
+* Emit live bus location payloads directly to the target Socket.io room (`route_<routeId>`).
+
+### Sprint 4: Passenger Discovery API
+
+* Build `GET /api/stations/search` using MongoDB `$text` search and `$meta: 'textScore'` relevance sorting.
+* Build `GET /api/routes/find?from=<id>&to=<id>` to identify directionally valid routes (`order_from < order_to`).
+* Attach live active bus data from the in-memory state store to search results.
+
+### Sprint 5: Passenger Live Room Subscriptions & $O(1)$ ETA Engine
+
+* Implement passenger socket logic for joining and leaving route rooms (`passenger:join_route`).
+* Calculate live ETAs in $O(1)$ time:
+
+$$\text{Remaining Distance} = \text{cumulativeDistances}[\text{stationIndex}] - \text{cumulativeDistances}[\text{busIndex}]$$
 
 
-* **Sprint 2: The Graph Builder (OSRM Integration)**
-* Build `POST /api/routes`.
-* Implement service to accept an array of `stationIds`, fetch their coordinates, and call the public OSRM API.
-* Process the OSRM `LineString` and `legs` to generate the `cumulativeDistances` array and `geometryIndex` for each stop before saving to MongoDB.
+* Stream lightweight ETA updates to subscribed room clients at high frequency.
 
+---
 
-* **Sprint 3: The Live Telemetry Engine**
-* Initialize the WebSocket server.
-* Build `POST /api/trips/start` to add buses to a Redis `active_buses` Set.
-* Implement a socket listener for driver pings that writes to a Redis Hash (`bus:<id>:state`) and fires a Redis `PUBLISH`.
+## 6. Architectural Trade-Offs & Open Discussion Points
 
+This specification remains open to further optimization and discussion around the following architectural trade-offs:
 
-* **Sprint 4: Passenger Discovery API**
-* Build `GET /api/stations/search` using MongoDB `$text`.
-* Build `GET /api/routes/find?from=<id>&to=<id>`. Query Mongo for matching routes where `order_from < order_to`, then fetch active buses on those routes from Redis.
-
-
-* **Sprint 5: Pub/Sub & ETA Broadcast**
-* Implement passenger WebSocket room joining logic.
-* Subscribe Node.js to Redis `SUBSCRIBE` channels. Forward live payloads to connected passenger WebSockets.
-* Implement the $O(1)$ ETA subtraction logic using the `cumulativeDistances` array.
+| Component | Current Selection | Alternative Option | Primary Trade-Off |
+| --- | --- | --- | --- |
+| **State Storage** | Node.js Process RAM (`Map`) | Redis In-Memory DB | Process RAM is extremely fast (nanosecond access) with zero external setup, but state is lost if the Node process restarts. Redis enables persistent state and horizontal scaling across multiple servers. |
+| **Geometry Density** | Pre-Interpolated (10m Chunks) | Standard Sparse OSRM | Pre-interpolation increases MongoDB document size slightly (~24 KB per route), but reduces CPU load during live driver pings from heavy trigonometric math to simple index matching. |
+| **OSRM Outages** | Hard Fail (Abort Route Creation) | Straight-Line Fallback | Hard failure prevents corrupt route paths, but blocks route creation if the public OSRM server is temporarily unreachable. |
+| **Station Deletion** | Soft Delete (`isActive: false`) | Cascading Route Mutation | Soft deletion is fast and non-destructive, but leaves inactive station references inside existing route polylines unless a validation check prevents deletion of active route stations. |
