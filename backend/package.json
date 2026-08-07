@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/server.ts",
+    "dev1": "bun --watch --exec tsx src/server.ts",
     "start": "bun src/server.ts",
     "typecheck": "tsc --noEmit",
     "seed": "bun src/utils/seed.ts"
@@ -26,6 +27,7 @@
     "@types/node": "^26.1.2",
     "@types/socket.io": "^3.0.2",
     "@types/ws": "^8.18.1",
+    "tsx": "^4.23.11",
     "typescript": "^5.9.2"
   }
 }
