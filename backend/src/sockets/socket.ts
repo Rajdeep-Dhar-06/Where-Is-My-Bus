@@ -1,15 +1,9 @@
-import { Server as HttpServer } from 'http';
-import { Server } from 'socket.io';
+import { getIO } from './io.singleton';
 import { registerDriverHandlers } from './driver.socket';
 import { registerPassengerHandlers } from './passenger.socket';
 
-export const initSocketServer = (httpServer: HttpServer) => {
-    const io = new Server(httpServer, {
-        cors: {
-            origin: '*',
-            methods: ['GET', 'POST']
-        }
-    });
+export const initSocketServer = () => {
+    const io = getIO();
 
     io.on('connection', (socket) => {
         console.log(`🔌 Socket Connected: ${socket.id}`);

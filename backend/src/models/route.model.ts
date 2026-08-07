@@ -15,6 +15,10 @@ export interface IRoute extends Document {
         type: 'LineString';
         coordinates: [number, number][];
     };
+    displayGeometry: {
+        type: 'LineString';
+        coordinates: [number, number][];
+    };
     cumulativeDistances: number[];
 }
 
@@ -28,6 +32,10 @@ const routeSchema = new Schema<IRoute>({
         distanceToNext: { type: Number, required: true }
     }],
     geometry: {
+        type: { type: String, enum: ['LineString'], default: 'LineString', required: true },
+        coordinates: { type: [[Number]], required: true }
+    },
+    displayGeometry: {
         type: { type: String, enum: ['LineString'], default: 'LineString', required: true },
         coordinates: { type: [[Number]], required: true }
     },

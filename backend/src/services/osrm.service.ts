@@ -87,12 +87,35 @@ export const OsrmService = {
                 distancesBetweenStops.push(legDistance);
             }
 
-            // 8. Return formatted data matching MongoDB Route schema
+            // 8. Display Geometry Two-Pass Pipeline
+            // Pass 1: Simplify
+            const simplifiedLine = turf.simplify(interpolatedLine, { tolerance: 10, highQuality: true });
+            let displayCoordinates = simplifiedLine.geometry.coordinates as [number, number][];
+
+            // Pass 2: Station Pinning
+            for (const index of stationGeometryIndices) {
+                const snappedCoord = interpolatedCoordinates[index];
+                const snappedPoint = turf.point(snappedCoord);
+                
+                const nearestOnSimplified = turf.nearestPointOnLine(turf.lineString(displayCoordinates), snappedPoint);
+                const insertIndex = nearestOnSimplified.properties.index ?? 0;
+                
+                // Insert after the nearest index segment start
+                displayCoordinates.splice(insertIndex + 1, 0, snappedCoord);
+            }
+            
+            const displayGeometry = {
+                type: 'LineString' as const,
+                coordinates: displayCoordinates
+            };
+
+            // 9. Return formatted data matching MongoDB Route schema
             return {
                 geometry: {
                     type: 'LineString' as const,
                     coordinates: interpolatedCoordinates
                 },
+                displayGeometry,
                 cumulativeDistances,
                 stationGeometryIndices,
                 distancesBetweenStops

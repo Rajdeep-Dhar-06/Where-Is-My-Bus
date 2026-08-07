@@ -3,24 +3,6 @@ import { LiveState } from '../state/live.state';
 
 export const registerPassengerHandlers = (io: Server, socket: Socket) => {
 
-    // Step 2: View active buses on a route (joins the summary room for live bus join/leave events)
-    socket.on('passenger:view_route_buses', (routeId: string) => {
-        const roomName = `route:${routeId}:summary`;
-        socket.join(roomName);
-        console.log(`👤 Passenger joined ${roomName}`);
-
-        // Push current snapshot of active buses on this route
-        const activeBuses = LiveState.getBusesOnRoute(routeId);
-        socket.emit('route:active_buses', activeBuses);
-    });
-
-    // Step 2: Leave the route summary room (when navigating away from Active Buses page)
-    socket.on('passenger:leave_route_buses', (routeId: string) => {
-        const roomName = `route:${routeId}:summary`;
-        socket.leave(roomName);
-        console.log(`👤 Passenger left ${roomName}`);
-    });
-
     // Step 3: Start tracking a specific bus (joins bus-scoped live room)
     socket.on('passenger:track_bus', (data: { busId: string }) => {
         const { busId } = data;

@@ -6,6 +6,7 @@ import routeRoutes from './routes/route.routes';
 import stationRoutes from './routes/station.routes';
 import vehicleRoutes from './routes/vehicle.routes';
 import userRoutes from './routes/user.routes';
+import tripRoutes from './routes/trip.routes';
 
 import { errorHandler } from './middlewares/error.middleware';
 
@@ -20,6 +21,7 @@ app.use('/api/routes', routeRoutes);
 app.use('/api/stations', stationRoutes);
 app.use('/api/vehicles', vehicleRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/trips', tripRoutes);
 
 // --- Health Check ---
 app.get('/health', (_req, res) => {

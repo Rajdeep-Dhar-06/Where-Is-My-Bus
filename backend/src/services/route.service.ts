@@ -37,6 +37,7 @@ export const RouteService = {
             isActive: true,
             stops: routeStops,
             geometry: osrmData.geometry,
+            displayGeometry: osrmData.displayGeometry,
             cumulativeDistances: osrmData.cumulativeDistances
         });
 
@@ -56,6 +57,7 @@ export const RouteService = {
     // 3. ADMIN / PASSENGER: Get full polyline and populated station names
     fetchRouteDetails: async (routeId: string) => {
         const route = await Route.findById(routeId)
+            .select('-geometry')
             .populate('stops.stationId', 'stationName location')
             .lean();
 
@@ -103,6 +105,7 @@ export const RouteService = {
                 routeName,
                 stops: routeStops,
                 geometry: osrmData.geometry,
+                displayGeometry: osrmData.displayGeometry,
                 cumulativeDistances: osrmData.cumulativeDistances
             },
             { new: true }

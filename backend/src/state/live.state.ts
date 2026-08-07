@@ -9,15 +9,23 @@ export interface BusState {
     speed: number;
     lastPingTime: number;
     tripStartedAt: number;
+    status: 'MOVING' | 'STOPPED' | 'STUCK';
+    lowSpeedPingCount: number;
+}
+
+export interface CachedRouteData {
+    line: Feature<LineString>;
+    stops: Array<{ stationId: string; stationName: string; order: number; geometryIndex: number }>;
+    cumulativeDistances: number[];
 }
 
 class LiveStateStore {
     // K: busId -> V: BusState
     public activeBuses = new Map<string, BusState>();
 
-    // K: routeId -> V: Turf Feature<LineString>
-    // We cache the heavy geometry here so the physics engine never waits on MongoDB
-    public routeCache = new Map<string, Feature<LineString>>();
+    // K: routeId -> V: CachedRouteData
+    // We cache the heavy geometry and stops here so the physics engine never waits on MongoDB
+    public routeCache = new Map<string, CachedRouteData>();
 
     // Helper: Remove a bus from the active state
     public removeBus(busId: string) {

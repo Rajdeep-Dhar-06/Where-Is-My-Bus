@@ -1,6 +1,8 @@
+import 'dotenv/config';
 import app from './index';
 import { connectDB } from './config/database';
 import { initSocketServer } from './sockets/socket';
+import { createIO } from './sockets/io.singleton';
 
 const PORT = process.env.PORT || 3000;
 
@@ -15,7 +17,8 @@ async function startServer() {
         });
 
         // --- Initialize WebSocket Engine ---
-        initSocketServer(httpServer);
+        createIO(httpServer);
+        initSocketServer();
     } catch (error) {
         console.error('Failed to start server:', error);
         process.exit(1);
